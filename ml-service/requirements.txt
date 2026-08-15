@@ -1,0 +1,7 @@
+flwr
+scikit-learn
+pandas
+numpy
+joblib
+requests
+pytest
