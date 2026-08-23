@@ -1,0 +1,270 @@
+Privacy-Preserving Heart Disease Prediction
+using Federated Learning
+Part 3 — Backend, System Architecture &amp; Integration
+High-Level Design Reference Document
+Internal engineering reference · Team Partial Derivatives
+Table of contents
+1. Purpose &amp; scope
+2. Architecture decisions
+3. High-level architecture
+4. Communication design
+5. Database schema (MySQL, owned by Spring Boot)
+6. Security model (summary)
+7. Federated learning lifecycle (Flower)
+8. Design patterns in use
+9. Cross-part integration
+10. Deployment topology
+11. Appendix — resilience details
+1. Purpose &amp; scope
+This document is the backend architecture reference for Part 3 of the project. It specifies the services, communication protocols, data model, security model, and integration contracts needed to build and deploy the backend without re-litigating design decisions already made.
+It assumes the reader is on the team and has context on Parts 1, 2, and 4 — it does not re-explain federated learning fundamentals except where they directly affect backend design.
+1.1 Tech stack
+Layer
+Technology
+Frontend
+React.js + Tailwind CSS
+Main backend
+Spring Boot (Java) — modular monolith
+ML / FL service
+FastAPI (Python)
+Federated learning
+Flower
+ML
+Scikit-learn
+Data processing
+Pandas + NumPy
+Database
+MySQL
+Internal service comms
+gRPC (HTTP/2, server streaming)
+External / client comms
+REST (JSON)
+Containerization
+Docker + docker-compose
+Testing
+Postman (REST + gRPC), JUnit, Pytest
+2. Architecture decisions
+Each row is a decision this document treats as closed. Re-opening one requires a new trade-off discussion, not a silent deviation.
+Decision
+Choice
+Reasoning (short)
+Service count
+2 services (Spring Boot + FastAPI)
+Only 2 genuine bounded contexts: app/state vs. ML compute. No independent scaling or team-ownership need for more.
+Style
+Not microservices — modular monolith + 1 compute service
+Microservices properties (own DB per service, independent scaling, service discovery) don&apos;t apply at this scale.
+Client-service comms
+REST / JSON
+Browser-native, simple, cacheable, easy to test with Postman.
+Internal service comms
+gRPC, HTTP/2, server streaming
+Replaces polling with live round-by-round push; strict typed contracts across Java/Python.
+Training progress delivery
+Server-streaming RPC + reconciliation on reconnect
+Avoids polling waste; reconciliation (not a broker) is the right-sized durability fix for a 2-service system.
+Auth model
+JWT, role-based (ADMIN / HOSPITAL), tenant-scoped queries
+Real multi-tenant isolation without a separate auth service — one enforcement point.
+Data ownership
+Spring Boot owns MySQL; FastAPI is stateless compute + job registry
+Access control and persistence live in one place; FastAPI never touches PII.
+3. High-level architecture
+3.1 Service inventory
+Spring Boot — main backend (modular monolith)
+Single deployable JAR, organized as internal modules. Each module below maps to a Java package, not a separate service.
+Module
+Responsibility
+auth
+Login, JWT issuance/validation, refresh rotation, role checks
+tenant
+Hospital registry, tenant-scoped repository helpers
+training
+Orchestrates FL sessions via gRPC client, persists round results
+prediction
+Accepts patient input, calls FastAPI Predict RPC, stores result
+metrics
+Serves global/comparison metrics to the dashboard
+audit
+Writes append-only audit_log rows for sensitive actions
+FastAPI — ML / FL service
+Module
+Responsibility
+grpc_server
+Implements the FLOrchestrator service (see §4.2)
+job_registry
+Tracks in-flight training sessions, idempotency keys
+flower_runner
+Drives Flower server + simulated clients, FedAvg aggregation
+model_store
+Joblib serialization, per-round checkpointing
+predictor
+Loads active model, runs inference
+4. Communication design
+4.1 Public REST API (React ↔ Spring Boot)
+Endpoint
+Role access
+Purpose
+POST /api/v1/training/start
+ADMIN
+Start a new FL session
+GET /api/v1/training/status
+ADMIN, HOSPITAL (scoped)
+Live round/status (backed by SSE or polling fallback)
+GET /api/v1/clients
+ADMIN
+Full hospital roster + status
+GET /api/v1/clients/me
+HOSPITAL
+Own client status only
+GET /api/v1/metrics/global
+ADMIN, HOSPITAL
+Global accuracy/loss per round (aggregate — shared)
+GET /api/v1/metrics/comparison
+ADMIN, HOSPITAL
+Centralized vs. federated comparison
+POST /api/v1/predict
+ADMIN, HOSPITAL
+Run prediction on patient input
+GET /api/v1/predictions
+ADMIN (all), HOSPITAL (own)
+Prediction history
+GET /api/v1/model/info
+ADMIN, HOSPITAL
+Active model version metadata
+4.2 Internal gRPC contract (Spring Boot ↔ FastAPI)
+Not exposed to the browser. Runs on the internal Docker network only (see §7).
+service FLOrchestrator {
+  rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse);
+  rpc StreamTrainingProgress(TrainingProgressRequest) returns (stream RoundUpdate);
+  rpc GetTrainingStatus(StatusRequest) returns (StatusResponse);
+  rpc Predict(PredictRequest) returns (PredictResponse);
+  rpc GetModelInfo(ModelInfoRequest) returns (ModelInfoResponse);
+}
+StartTraining carries a client-generated idempotency_key. StreamTrainingProgress is the steady-state channel for live round updates; GetTrainingStatus is used only for reconciliation after a stream disconnect, never for steady-state polling.
+5. Database schema (MySQL, owned by Spring Boot)
+FastAPI never connects to MySQL directly — all persistence goes through Spring Boot.
+Table
+Key columns
+Notes
+hospital
+id, name, contact_email
+Tenant registry — first-class entity, not a label
+user
+id, username, password_hash, role, hospital_id (FK, null for admin)
+bcrypt hashes only
+training_session
+id, status, total_rounds, idempotency_key (unique)
+One row per FL run
+federated_round
+id, session_id (FK), round_number, global_accuracy, global_loss, checkpoint_path
+checkpoint_path enables resume/rollback
+client_round_status
+id, round_id (FK), hospital_id (FK), local_accuracy, local_loss, sample_count
+Per-hospital, per-round — tenant scoped
+model_version
+id, session_id (FK), round_number, model_path, accuracy, precision, recall, f1, is_active
+Exactly one is_active=true at a time
+prediction
+id, hospital_id (FK, nullable), model_version_id (FK), patient_features (JSON, encrypted), result
+Tenant scoped; JSON column encrypted at rest
+comparison_result
+id, session_id (FK), approach_type, accuracy, f1_score, training_time_sec
+Generic row shape for centralized vs. federated
+audit_log
+id, user_id, action, resource_id, ip_address, created_at
+Append-only, never updated or deleted
+6. Security model (summary)
+Layer
+Control
+Authentication
+JWT access (~15 min) + rotated refresh token; bcrypt password hashing; lockout after failed attempts
+Authorization
+Role check at method entry (deny-by-default) + tenant_id sourced from JWT, never from request body
+Transport
+TLS on React↔Spring Boot; TLS/mTLS on Spring Boot↔FastAPI gRPC
+Data at rest
+patient_features JSON encrypted at column level; model artifacts on restricted-permission storage
+Secrets
+No secrets in Git; injected via environment / container secrets at runtime
+API hardening
+Bean Validation / Pydantic input validation, rate limiting on /predict and /login, strict CORS, standard security headers
+Audit trail
+Append-only audit_log; trace ID propagated React → Spring Boot → gRPC metadata → FastAPI
+FL-level privacy
+Only weight/gradient updates cross the client↔server boundary — enforced by protocol design, not policy
+Differential privacy and secure aggregation are documented as roadmap items, not implemented — see §9.
+7. Federated learning lifecycle (Flower)
+This describes how a training session actually executes inside FastAPI, since it&apos;s the part of the system Spring Boot orchestrates but doesn&apos;t implement.
+Stage
+What happens
+Persisted by Spring Boot
+Initialize
+Global model created, or resumed from last checkpoint if reconciling
+training_session row created (or resumed)
+Distribute
+Server sends current global weights to all simulated hospital clients
+—
+Local train
+Each client trains on its own partition only (Part 2 output); no raw data leaves the client process
+—
+Aggregate
+FedAvg combines client weight updates into a new global model
+—
+Checkpoint + evaluate
+Model serialized to disk; accuracy/loss computed
+federated_round row + checkpoint_path
+Repeat / stop
+Loop continues until total_rounds reached or convergence threshold met
+training_session.status updated to COMPLETE
+8. Design patterns in use
+Pattern
+Where
+Why
+Backend-for-frontend / thin orchestrator
+Spring Boot in front of FastAPI
+One place for auth, validation, and reshaping — frontend never talks to ML compute directly
+Repository pattern
+Spring Data JPA repositories, tenant-scoped
+Query-level tenant isolation instead of response filtering
+Idempotency key
+StartTraining RPC
+Safe retries on network failure without double-starting training
+Circuit breaker + retry with backoff
+Spring Boot → FastAPI gRPC client (Resilience4j)
+Fail fast instead of cascading when FastAPI is unavailable
+Reconciliation on reconnect
+StreamTrainingProgress consumer
+Recovers from a dropped stream without restarting training
+Strategy pattern
+Aggregation algorithm selection (FedAvg now, FedProx future)
+Swap the aggregation strategy without touching orchestration code
+Adapter
+FastAPI&apos;s grpc_server module wrapping Flower&apos;s native API
+Keeps Flower&apos;s API surface isolated from the gRPC contract
+Append-only log
+audit_log table
+Tamper-evident trail; never mutated after insert
+9. Cross-part integration
+Part 1 (FL core) → Part 3
+Part 1&apos;s FedAvg implementation runs inside FastAPI&apos;s flower_runner module — it is not a separate service, it&apos;s imported and driven by the gRPC server.
+Contract: Part 1 exposes a Python function/class that flower_runner calls per round; it returns (weights, metrics) which the gRPC server turns into a RoundUpdate message.
+Part 2 (dataset) → Part 3
+Part 2&apos;s partitioned datasets are loaded by the simulated FL clients at startup — Part 3 does not process raw data, only receives dataset statistics (row counts, feature list) to store for dashboard display.
+Contract: a small stats.json (or function call) from Part 2&apos;s pipeline feeding the hospital roster&apos;s sample_count.
+Part 3 → Part 4 (frontend)
+All Part 4 requests go through the public REST API in §4.1 — Part 4 never calls FastAPI or the database directly.
+Live round updates reach the browser via Spring Boot (REST polling or SSE) — the gRPC stream stops at Spring Boot, per §4.2.
+10. Deployment topology
+docker-compose brings up all four containers on a shared internal network. Only react-app and spring-boot-app publish ports to the host; fastapi-app and mysql-db are unreachable from outside the network by construction, not convention.
+11. Appendix — resilience details
+11.1 Reconciliation flow on stream disconnect
+StreamTrainingProgress connection drops (network blip, container restart).
+Spring Boot calls the unary GetTrainingStatus RPC.
+Compares returned current_round against MAX(round_number) already in federated_round.
+Re-subscribes to StreamTrainingProgress from the next expected round — no restart, no duplicate rows.
+11.2 What&apos;s built vs. roadmap
+Built now
+Roadmap (documented, not implemented)
+JWT auth, tenant-scoped queries, TLS, audit log, rate limiting, input validation, circuit breaker, idempotency
+Differential privacy (noise on gradients), secure aggregation (cryptographic), full mTLS with a proper CA, cross-device FL at real hospital scale
