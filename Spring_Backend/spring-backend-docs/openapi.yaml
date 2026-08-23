@@ -1,0 +1,471 @@
+openapi: 3.0.3
+info:
+  title: FL Backend API
+  version: 1.0.0
+  description: |
+    OpenAPI specification for the currently implemented federated learning backend endpoints.
+    This document reflects the real API surface in the repository, not a future design.
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate a user and return a JWT
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/clients:
+    get:
+      tags: [Clients]
+      summary: List all hospitals/clients
+      operationId: getAllClients
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HospitalDto'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/clients/me:
+    get:
+      tags: [Clients]
+      summary: Get the current hospital record for the authenticated hospital user
+      operationId: getMyClient
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current hospital details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HospitalDto'
+        '400':
+          description: Missing or invalid hospital id in JWT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '404':
+          description: Hospital not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/metrics/global:
+    get:
+      tags: [Metrics]
+      summary: Fetch global federated learning rounds for a session
+      operationId: getGlobalMetrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Training session identifier
+      responses:
+        '200':
+          description: Global metrics for a training session
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FederatedRoundDto'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/metrics/comparison:
+    get:
+      tags: [Metrics]
+      summary: Fetch comparison metrics for a session
+      operationId: getComparisonMetrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Comparison metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComparisonResultDto'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/model/info:
+    get:
+      tags: [Model]
+      summary: Get the active model version
+      operationId: getModelInfo
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active model metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersionDto'
+        '404':
+          description: No active model version found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/predict:
+    post:
+      tags: [Prediction]
+      summary: Run a prediction for a hospital using the current active model
+      operationId: runPrediction
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+              description: Patient feature payload as a raw JSON string.
+              example: '{"age":62,"sex":"M","bmi":28.4,"smoking":true}'
+      responses:
+        '200':
+          description: Prediction result stored and returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictionDto'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/predictions:
+    get:
+      tags: [Prediction]
+      summary: List predictions visible to the current user
+      operationId: getPredictions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PredictionDto'
+        '400':
+          description: Hospital id missing in JWT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/training/start:
+    post:
+      tags: [Training]
+      summary: Start a new federated training session
+      operationId: startTraining
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: totalRounds
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Total number of rounds to request for the training session
+      responses:
+        '200':
+          description: Training session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSessionDto'
+        '403':
+          description: Forbidden; admin role required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/training/status:
+    get:
+      tags: [Training]
+      summary: Get the current status of a training session
+      operationId: getTrainingStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Training session status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSessionDto'
+        '404':
+          description: Training session not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuthRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: password123
+    AuthResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: JWT bearer token
+    HospitalDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+    TrainingSessionDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          type: string
+        totalRounds:
+          type: integer
+          format: int32
+        idempotencyKey:
+          type: string
+    FederatedRoundDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        roundNumber:
+          type: integer
+          format: int32
+        globalAccuracy:
+          type: number
+          format: double
+        globalLoss:
+          type: number
+          format: double
+        checkpointPath:
+          type: string
+          nullable: true
+    ClientRoundStatusDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        roundId:
+          type: integer
+          format: int64
+        hospitalId:
+          type: integer
+          format: int64
+        localAccuracy:
+          type: number
+          format: double
+        localLoss:
+          type: number
+          format: double
+        sampleCount:
+          type: integer
+          format: int32
+    ModelVersionDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        roundNumber:
+          type: integer
+          format: int32
+        modelPath:
+          type: string
+          nullable: true
+        accuracy:
+          type: number
+          format: double
+        precision:
+          type: number
+          format: double
+        recall:
+          type: number
+          format: double
+        f1:
+          type: number
+          format: double
+        isActive:
+          type: boolean
+    PredictionDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        hospitalId:
+          type: integer
+          format: int64
+          nullable: true
+        modelVersionId:
+          type: integer
+          format: int64
+          nullable: true
+        patientFeatures:
+          type: string
+        result:
+          type: string
+          nullable: true
+    ComparisonResultDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        sessionId:
+          type: integer
+          format: int64
+        approachType:
+          type: string
+        accuracy:
+          type: number
+          format: double
+        f1Score:
+          type: number
+          format: double
+        trainingTimeSec:
+          type: integer
+          format: int64
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
