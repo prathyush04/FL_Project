@@ -29,9 +29,9 @@ services:
       - key: JPA_PLATFORM
         value: org.hibernate.dialect.PostgreSQLDialect
       - key: FRONTEND_URL
-        sync: false   # Set this manually to your Vercel URL after frontend deploy
+        sync: false
       - key: ML_SERVICE_URL
-        sync: false   # Set this manually to your ML service Render URL after deploy
+        sync: false
 
   - type: web
     name: fl-ml-service
