@@ -1,0 +1,33 @@
+# Commands to run the FL Project
+
+## 1. Spring Backend (Java)
+Open a new terminal and run the following commands:
+```bash
+cd Spring_Backend
+.\mvnw.cmd spring-boot:run
+```
+
+## 2. Frontend (React/Vite)
+Open a new terminal and run the following commands:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## 3. ML Service (Python FastAPI)
+Open a new terminal and run the following commands:
+```bash
+cd ml-service
+# Create a virtual environment if not already created
+python -m venv venv
+
+# Activate the virtual environment (Windows)
+.\venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the FastAPI server
+python api.py
+```

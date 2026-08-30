@@ -19,12 +19,12 @@ public class PredictionServiceImpl implements PredictionService {
     private final PredictionRepository predictionRepository;
     private final HospitalRepository hospitalRepository;
     private final ModelVersionRepository modelVersionRepository;
+    private final org.springframework.web.client.RestTemplate restTemplate;
 
     @Override
     @Transactional
     public Prediction runPrediction(Long hospitalId, String patientFeaturesJson) {
         log.info("Running prediction for hospitalId: {}", hospitalId);
-        // TODO: Replace with gRPC client call to FastAPI to run prediction
         
         Prediction prediction = new Prediction();
         if (hospitalId != null) {
@@ -37,8 +37,20 @@ public class PredictionServiceImpl implements PredictionService {
         
         prediction.setPatientFeatures(patientFeaturesJson);
         
-        // Mock prediction result
-        prediction.setResult("Mock Result: High Risk");
+        String result = "Mock Result: High Risk";
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<String> request = new org.springframework.http.HttpEntity<>(patientFeaturesJson, headers);
+            
+            java.util.Map<String, String> response = restTemplate.postForObject("http://localhost:8000/predict", request, java.util.Map.class);
+            if (response != null && response.containsKey("prediction")) {
+                result = response.get("prediction");
+            }
+        } catch (Exception e) {
+            log.error("Failed to run prediction in ML service", e);
+        }
+        prediction.setResult(result);
         
         return predictionRepository.save(prediction);
     }

@@ -1,6 +1,7 @@
 package com.fl.backend.entity;
 
 import jakarta.persistence.*;
+import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 @Data

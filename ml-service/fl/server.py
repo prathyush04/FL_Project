@@ -1,81 +1,85 @@
 import flwr as fl
 import joblib
-import json
 import os
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from flwr.common import Metrics
-from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 
 import config
 
-def get_evaluate_fn():
-    # Return a function to evaluate the global model on a central test set if we have one.
-    # We can use the processed_data.csv for a centralized evaluation of the global model.
-    # Alternatively, we can just rely on client evaluation metrics.
-    # Let's rely on client evaluation metrics for FedAvg.
-    return None
-
-def fit_metrics_aggregation_fn(metrics: List[Tuple[int, Metrics]]) -> Metrics:
-    # We don't necessarily return metrics from fit in the client, but if we do:
-    return {}
-
 def evaluate_metrics_aggregation_fn(metrics: List[Tuple[int, Metrics]]) -> Metrics:
-    # Aggregate accuracy
     accuracies = [num_examples * m["accuracy"] for num_examples, m in metrics]
     examples = [num_examples for num_examples, _ in metrics]
-    
     return {"accuracy": sum(accuracies) / sum(examples)}
 
 def save_global_model_and_metrics(history):
     print("Saving global model and metrics...")
-    
-    # In Flower, the Strategy has the weights, but it's easier to extract from History or by saving in a custom strategy.
-    # For a simple script, we just save the metrics here. The actual model weights can be saved by subclassing FedAvg
-    # or passing a callback. Since this is an MVP, we'll save the metrics to federated_metrics.csv.
-    
     base_dir = os.path.dirname(os.path.dirname(__file__))
     results_dir = os.path.join(base_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
-    
-    # Process history
+
+    if not history.losses_distributed or not history.metrics_distributed:
+        print("No metrics to save.")
+        return
+
     rounds, losses = zip(*history.losses_distributed)
     _, accuracies = zip(*history.metrics_distributed["accuracy"])
-    
-    df_metrics = pd.DataFrame({
-        "round": rounds,
-        "loss": losses,
-        "accuracy": accuracies
-    })
-    
+
+    df_metrics = pd.DataFrame({"round": rounds, "loss": losses, "accuracy": accuracies})
     metrics_path = os.path.join(results_dir, "federated_metrics.csv")
     df_metrics.to_csv(metrics_path, index=False)
     print(f"Saved federated metrics to {metrics_path}")
 
-class SaveModelStrategy(fl.server.strategy.FedAvg):
+
+class SaveModelStrategy(fl.server.strategy.FedProx):
     def aggregate_fit(self, server_round, results, failures):
-        aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
-        
+        aggregated_parameters, aggregated_metrics = super().aggregate_fit(
+            server_round, results, failures
+        )
+
         if aggregated_parameters is not None:
-            # Convert parameters back to ndarrays
             params = fl.common.parameters_to_ndarrays(aggregated_parameters)
+
+            model = MLPClassifier(hidden_layer_sizes=(16,), random_state=42)
+            # Initialize with dummy data (13 features for heart disease)
+            dummy_X = np.zeros((2, 13))
+            dummy_y = np.array([0, 1])
+            model.partial_fit(dummy_X, dummy_y, classes=np.array([0, 1]))
             
-            # Save the model
-            model = LogisticRegression()
-            model.classes_ = np.array([0, 1])
-            model.coef_ = params[0]
-            model.intercept_ = params[1]
-            
+            model.coefs_ = [params[0], params[1]]
+            model.intercepts_ = [params[2], params[3]]
+
             base_dir = os.path.dirname(os.path.dirname(__file__))
             results_dir = os.path.join(base_dir, "results")
             model_path = os.path.join(results_dir, "global_model.joblib")
             joblib.dump(model, model_path)
-            # print(f"Saved global model for round {server_round} to {model_path}")
-            
+
         return aggregated_parameters, aggregated_metrics
 
+
 def main():
+    # Try to load existing model for continuous training
+    initial_parameters = None
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    model_path = os.path.join(base_dir, "results", "global_model.joblib")
+    
+    if os.path.exists(model_path):
+        try:
+            existing_model = joblib.load(model_path)
+            if hasattr(existing_model, 'coefs_'):
+                ndarrays = [
+                    existing_model.coefs_[0], 
+                    existing_model.coefs_[1], 
+                    existing_model.intercepts_[0], 
+                    existing_model.intercepts_[1]
+                ]
+                initial_parameters = fl.common.ndarrays_to_parameters(ndarrays)
+                print("Loaded existing global model to distribute to hospitals for this session!")
+        except Exception as e:
+            print(f"Could not load existing model, starting fresh: {e}")
+
     # Define strategy
     strategy = SaveModelStrategy(
         fraction_fit=1.0,
@@ -84,18 +88,17 @@ def main():
         min_evaluate_clients=config.NUM_CLIENTS,
         min_available_clients=config.NUM_CLIENTS,
         evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
-        initial_parameters=None,
+        initial_parameters=initial_parameters,
+        proximal_mu=1.0, # Adding proximal term for FedProx
     )
-    
-    # Start server
+
     print(f"Starting Flower server for {config.NUM_ROUNDS} rounds...")
     history = fl.server.start_server(
-        server_address="0.0.0.0:8080",
+        server_address="0.0.0.0:8081",
         config=fl.server.ServerConfig(num_rounds=config.NUM_ROUNDS),
         strategy=strategy,
     )
-    
-    # Save metrics
+
     save_global_model_and_metrics(history)
 
 if __name__ == "__main__":

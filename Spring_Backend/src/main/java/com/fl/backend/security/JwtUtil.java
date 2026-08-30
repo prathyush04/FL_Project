@@ -74,6 +74,12 @@ public class JwtUtil {
     
     public Long extractHospitalId(String token) {
         Claims claims = extractAllClaims(token);
-        return claims.get("hospital_id", Long.class);
+        Object hospitalId = claims.get("hospital_id");
+        if (hospitalId instanceof Integer) {
+            return ((Integer) hospitalId).longValue();
+        } else if (hospitalId instanceof Long) {
+            return (Long) hospitalId;
+        }
+        return null;
     }
 }

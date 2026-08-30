@@ -36,7 +36,6 @@ public class AuthController {
         Long hospitalId = user.getHospital() != null ? user.getHospital().getId() : null;
         
         String token = jwtUtil.generateToken(userDetails, hospitalId);
-        
-        return ResponseEntity.ok(new AuthResponse(token));
+        return ResponseEntity.ok(new AuthResponse(token, user.getRole(), hospitalId));
     }
 }

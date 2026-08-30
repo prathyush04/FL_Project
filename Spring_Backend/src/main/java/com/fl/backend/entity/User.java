@@ -1,12 +1,13 @@
 package com.fl.backend.entity;
 
 import jakarta.persistence.*;
+import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode(callSuper = false)
 @Entity
-@Table(name = "user")
+@Table(name = "app_user")
 public class User extends Auditable {
 
     @Id

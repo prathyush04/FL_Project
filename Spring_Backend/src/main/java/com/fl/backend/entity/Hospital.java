@@ -1,6 +1,7 @@
 package com.fl.backend.entity;
 
 import jakarta.persistence.*;
+import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 @Data
@@ -18,4 +19,7 @@ public class Hospital extends Auditable {
 
     @Column(name = "contact_email", nullable = false)
     private String contactEmail;
+
+    @Column(length = 50)
+    private String status = "REGISTERED";
 }

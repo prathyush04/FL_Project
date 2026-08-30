@@ -37,4 +37,15 @@ public class TrainingController {
         }
         return ResponseEntity.ok(mapper.toTrainingSessionDto(status));
     }
+    
+    @PostMapping("/join")
+    public ResponseEntity<Void> joinTraining(@RequestParam Long hospitalId, @org.springframework.web.bind.annotation.RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        try {
+            String csvData = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            trainingService.joinTraining(hospitalId, csvData);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 }

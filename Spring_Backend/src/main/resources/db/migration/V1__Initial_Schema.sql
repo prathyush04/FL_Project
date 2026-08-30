@@ -4,7 +4,7 @@ CREATE TABLE hospital (
     contact_email VARCHAR(255) NOT NULL
 );
 
-CREATE TABLE user (
+CREATE TABLE app_user (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE prediction (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     hospital_id BIGINT,
     model_version_id BIGINT,
-    patient_features JSON,
+    patient_features VARCHAR(2000),
     result VARCHAR(255),
     FOREIGN KEY (hospital_id) REFERENCES hospital(id),
     FOREIGN KEY (model_version_id) REFERENCES model_version(id)
@@ -81,5 +81,5 @@ CREATE TABLE audit_log (
     resource_id VARCHAR(255),
     ip_address VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES user(id)
+    FOREIGN KEY (user_id) REFERENCES app_user(id)
 );

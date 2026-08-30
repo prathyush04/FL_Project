@@ -42,7 +42,7 @@ def train_and_evaluate_centralized():
     print(f"Precision: {prec:.4f}")
     print(f"Recall:    {rec:.4f}")
     print(f"F1 Score:  {f1:.4f}")
-    
+        
     metrics = {
         "accuracy": float(acc),
         "precision": float(prec),

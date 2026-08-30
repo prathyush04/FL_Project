@@ -20,7 +20,7 @@ public class Prediction {
     @JoinColumn(name = "model_version_id")
     private ModelVersion modelVersion;
 
-    @Column(name = "patient_features", columnDefinition = "json")
+    @Column(name = "patient_features", length = 2000)
     private String patientFeatures; // Stored as JSON string
 
     private String result;
