@@ -3,7 +3,7 @@ services:
     name: fl-spring-backend
     runtime: docker
     rootDir: Spring_Backend
-    dockerfilePath: Spring_Backend/Dockerfile
+    dockerfilePath: Dockerfile
     plan: free
     envVars:
       - key: SPRING_PROFILES_ACTIVE
@@ -40,13 +40,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python api.py
     plan: free
-    disk:
-      name: model-storage
-      mountPath: /var/data/models
-      sizeGB: 1
     envVars:
       - key: MODEL_DIR
-        value: /var/data/models
+        value: ./results
 
 databases:
   - name: fl-postgres
