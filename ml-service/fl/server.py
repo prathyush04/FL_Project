@@ -16,8 +16,7 @@ def evaluate_metrics_aggregation_fn(metrics: List[Tuple[int, Metrics]]) -> Metri
 
 def save_global_model_and_metrics(history):
     print("Saving global model and metrics...")
-    base_dir = os.path.dirname(os.path.dirname(__file__))
-    results_dir = os.path.join(base_dir, "results")
+    results_dir = os.environ.get("MODEL_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"))
     os.makedirs(results_dir, exist_ok=True)
 
     if not history.losses_distributed or not history.metrics_distributed:
@@ -51,8 +50,7 @@ class SaveModelStrategy(fl.server.strategy.FedProx):
             model.coefs_ = [params[0], params[1]]
             model.intercepts_ = [params[2], params[3]]
 
-            base_dir = os.path.dirname(os.path.dirname(__file__))
-            results_dir = os.path.join(base_dir, "results")
+            results_dir = os.environ.get("MODEL_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"))
             model_path = os.path.join(results_dir, "global_model.joblib")
             joblib.dump(model, model_path)
 
@@ -62,8 +60,8 @@ class SaveModelStrategy(fl.server.strategy.FedProx):
 def main():
     # Try to load existing model for continuous training
     initial_parameters = None
-    base_dir = os.path.dirname(os.path.dirname(__file__))
-    model_path = os.path.join(base_dir, "results", "global_model.joblib")
+    results_dir = os.environ.get("MODEL_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"))
+    model_path = os.path.join(results_dir, "global_model.joblib")
     
     if os.path.exists(model_path):
         try:

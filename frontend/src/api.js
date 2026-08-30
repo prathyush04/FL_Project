@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+// Uses VITE_API_URL env var in production (set in Vercel dashboard)
+// Falls back to local Spring backend for development
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },

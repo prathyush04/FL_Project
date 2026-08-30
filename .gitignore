@@ -1,0 +1,44 @@
+# =============================================================================
+# Federated Learning Project — Root .gitignore
+# =============================================================================
+
+# Local environment secrets (never commit real .env files)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ML model artifacts (large binary files — re-train on server)
+ml-service/results/global_model.joblib
+ml-service/results/centralized_model.joblib
+ml-service/data/temp_hospital_*.csv
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Java / Maven
+Spring_Backend/target/
+Spring_Backend/.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

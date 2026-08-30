@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: fl-spring-backend
+    runtime: docker
+    rootDir: Spring_Backend
+    dockerfilePath: Spring_Backend/Dockerfile
+    plan: free
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION
+        value: "86400000"
+      - key: DB_URL
+        fromDatabase:
+          name: fl-postgres
+          property: connectionString
+      - key: DB_USERNAME
+        fromDatabase:
+          name: fl-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: fl-postgres
+          property: password
+      - key: DB_DRIVER
+        value: org.postgresql.Driver
+      - key: JPA_PLATFORM
+        value: org.hibernate.dialect.PostgreSQLDialect
+      - key: FRONTEND_URL
+        sync: false   # Set this manually to your Vercel URL after frontend deploy
+      - key: ML_SERVICE_URL
+        sync: false   # Set this manually to your ML service Render URL after deploy
+
+  - type: web
+    name: fl-ml-service
+    runtime: python
+    rootDir: ml-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: python api.py
+    plan: free
+    disk:
+      name: model-storage
+      mountPath: /var/data/models
+      sizeGB: 1
+    envVars:
+      - key: MODEL_DIR
+        value: /var/data/models
+
+databases:
+  - name: fl-postgres
+    plan: free
+    databaseName: fl_backend
+    user: fl_user

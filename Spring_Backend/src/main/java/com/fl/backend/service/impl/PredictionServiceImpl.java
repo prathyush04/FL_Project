@@ -8,6 +8,7 @@ import com.fl.backend.repository.PredictionRepository;
 import com.fl.backend.service.PredictionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,29 +22,33 @@ public class PredictionServiceImpl implements PredictionService {
     private final ModelVersionRepository modelVersionRepository;
     private final org.springframework.web.client.RestTemplate restTemplate;
 
+    @Value("${app.ml-service.url:http://localhost:8000}")
+    private String mlServiceUrl;
+
     @Override
     @Transactional
     public Prediction runPrediction(Long hospitalId, String patientFeaturesJson) {
         log.info("Running prediction for hospitalId: {}", hospitalId);
-        
+
         Prediction prediction = new Prediction();
         if (hospitalId != null) {
             prediction.setHospital(hospitalRepository.findById(hospitalId).orElse(null));
         }
-        
+
         // Find active model version
         ModelVersion activeModel = modelVersionRepository.findByIsActiveTrue().orElse(null);
         prediction.setModelVersion(activeModel);
-        
         prediction.setPatientFeatures(patientFeaturesJson);
-        
+
         String result = "Mock Result: High Risk";
         try {
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-            org.springframework.http.HttpEntity<String> request = new org.springframework.http.HttpEntity<>(patientFeaturesJson, headers);
-            
-            java.util.Map<String, String> response = restTemplate.postForObject("http://localhost:8000/predict", request, java.util.Map.class);
+            org.springframework.http.HttpEntity<String> request =
+                    new org.springframework.http.HttpEntity<>(patientFeaturesJson, headers);
+
+            java.util.Map<String, String> response = restTemplate.postForObject(
+                    mlServiceUrl + "/predict", request, java.util.Map.class);
             if (response != null && response.containsKey("prediction")) {
                 result = response.get("prediction");
             }
@@ -51,7 +56,7 @@ public class PredictionServiceImpl implements PredictionService {
             log.error("Failed to run prediction in ML service", e);
         }
         prediction.setResult(result);
-        
+
         return predictionRepository.save(prediction);
     }
 }
