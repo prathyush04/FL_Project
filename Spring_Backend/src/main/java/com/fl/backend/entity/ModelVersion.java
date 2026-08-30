@@ -24,7 +24,7 @@ public class ModelVersion {
 
     private Double accuracy;
     
-    @Column(name = "`precision`")
+    @Column(name = "precision_score")
     private Double precision;
     
     private Double recall;

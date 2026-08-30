@@ -66,7 +66,7 @@ def main():
     if os.path.exists(model_path):
         try:
             existing_model = joblib.load(model_path)
-            if hasattr(existing_model, 'coefs_'):
+            if hasattr(existing_model, 'coefs_') and len(existing_model.coefs_) >= 2 and existing_model.coefs_[0].shape[0] == 28:
                 ndarrays = [
                     existing_model.coefs_[0], 
                     existing_model.coefs_[1], 
@@ -74,7 +74,9 @@ def main():
                     existing_model.intercepts_[1]
                 ]
                 initial_parameters = fl.common.ndarrays_to_parameters(ndarrays)
-                print("Loaded existing global model to distribute to hospitals for this session!")
+                print("Loaded existing global model (28 features) to distribute to hospitals!")
+            else:
+                print("Existing model has incompatible shape or is uninitialized, starting fresh with 28 features.")
         except Exception as e:
             print(f"Could not load existing model, starting fresh: {e}")
 

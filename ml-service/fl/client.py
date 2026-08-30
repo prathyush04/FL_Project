@@ -10,66 +10,66 @@ from sklearn.metrics import log_loss, accuracy_score
 
 warnings.filterwarnings("ignore")
 
-# Expected UCI Cleveland Heart Disease columns
+# Expected UCI Cleveland Heart Disease columns (model was built around these)
 UCI_FEATURE_COLUMNS = ["age", "sex", "cp", "trestbps", "chol", "fbs",
                         "restecg", "thalach", "exang", "oldpeak", "slope", "ca", "thal"]
 
-# Framingham → UCI column mapping (best-effort approximation)
+# Framingham column -> UCI column mapping (best-effort)
 FRAMINGHAM_TO_UCI = {
-    "TenYearCHD": "target",
-    "age": "age",
     "male": "sex",
     "totChol": "chol",
     "sysBP": "trestbps",
     "heartRate": "thalach",
     "diabetes": "fbs",
-    "glucose": "oldpeak",        # rough approximation
-    "BMI": None,                  # no UCI equivalent — dropped
-    "education": None,
-    "currentSmoker": None,
-    "cigsPerDay": None,
-    "BPMeds": None,
-    "prevalentStroke": None,
-    "prevalentHyp": None,
-    "diaBP": None,
+    "glucose": "oldpeak",
 }
 
 
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_columns(df):
     """
-    Normalizes uploaded CSVs to match UCI Heart Disease format with a 'target' column.
-    Supports:
-      - UCI Cleveland format (columns: age, sex, cp, ..., target)
-      - Framingham format (columns: male, age, TenYearCHD, ...)
-      - Already-processed format (numeric column names 0..27 + target)
+    Normalizes an uploaded hospital CSV to UCI Heart Disease format.
+    Handles three formats:
+      1. UCI Cleveland  (columns: age, sex, cp, trestbps, chol, ..., target)
+      2. Framingham     (columns: male, age, TenYearCHD, ...)
+      3. Pre-processed  (numeric column names 0..27 + target)
+    Returns a DataFrame with UCI feature columns + 'target'.
     """
     cols = set(df.columns)
 
-    # Already has 'target' and UCI features → use as-is
-    if "target" in cols and "age" in cols and "sex" in cols:
-        # Keep only UCI feature cols + target, drop anything else
+    # ---- Format 1: already has proper UCI columns + target ----
+    if "target" in cols and "sex" in cols and "cp" in cols:
         keep = [c for c in UCI_FEATURE_COLUMNS if c in df.columns] + ["target"]
-        return df[keep].dropna()
+        result = df[keep].dropna()
+        print(f"Detected UCI format. Shape: {result.shape}")
+        return result
 
-    # Framingham dataset
-    if "TenYearCHD" in cols:
-        renamed = {}
-        for fk, uci_k in FRAMINGHAM_TO_UCI.items():
-            if uci_k and fk in df.columns:
-                renamed[fk] = uci_k
-        df = df.rename(columns=renamed)
-        # Fill missing UCI columns with median/mode
+    # ---- Format 2: Framingham (TenYearCHD OR already renamed to target) ----
+    if "TenYearCHD" in cols or ("male" in cols and "target" in cols):
+        # Rename TenYearCHD -> target if needed
+        if "TenYearCHD" in cols:
+            df = df.rename(columns={"TenYearCHD": "target"})
+
+        # Rename Framingham columns to UCI equivalents
+        df = df.rename(columns=FRAMINGHAM_TO_UCI)
+
+        # Fill any missing UCI columns with zeros
         for col in UCI_FEATURE_COLUMNS:
             if col not in df.columns:
                 df[col] = 0
-        return df[UCI_FEATURE_COLUMNS + ["target"]].dropna()
 
-    # Already numeric (processed_data.csv format: 0..27 + target)
+        result = df[UCI_FEATURE_COLUMNS + ["target"]].dropna()
+        print(f"Detected Framingham format. Shape: {result.shape}")
+        return result
+
+    # ---- Format 3: pre-processed numeric columns ----
     if "target" in cols:
-        return df.dropna()
+        result = df.dropna()
+        print(f"Detected pre-processed format. Shape: {result.shape}")
+        return result
 
     raise ValueError(
-        f"Unrecognized CSV format. Expected columns with 'target' label. Got: {list(df.columns)}"
+        f"Unrecognized CSV format. Expected a 'target' label column. "
+        f"Got columns: {sorted(cols)}"
     )
 
 
@@ -102,7 +102,7 @@ class HeartDiseaseClient(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         self.model.fit(self.X_train, self.y_train)
-        print(f"Training finished for this round.")
+        print("Training finished for this round.")
         return self.get_parameters(config={}), len(self.X_train), {}
 
     def evaluate(self, parameters, config):
@@ -121,30 +121,30 @@ def load_data(data_path):
         raise FileNotFoundError(f"Data not found at {data_path}")
 
     df = pd.read_csv(data_path)
-    print(f"Loaded CSV with columns: {list(df.columns)}")
+    print(f"Loaded CSV with {len(df)} rows and columns: {list(df.columns)}")
 
     # Normalize to UCI format
     df = normalize_columns(df)
-    print(f"After normalization — shape: {df.shape}, columns: {list(df.columns)}")
 
-    # Load preprocessor
+    # Load preprocessor and apply it (same transform used at prediction time)
     preprocessor_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "model", "preprocessor.joblib"
     )
 
-    if os.path.exists(preprocessor_path) and set(UCI_FEATURE_COLUMNS).issubset(set(df.columns)):
-        # Apply the same preprocessor used during centralized training
+    uci_cols_present = all(c in df.columns for c in UCI_FEATURE_COLUMNS)
+
+    if os.path.exists(preprocessor_path) and uci_cols_present:
         preprocessor = joblib.load(preprocessor_path)
         X = preprocessor.transform(df[UCI_FEATURE_COLUMNS])
         if hasattr(X, "toarray"):
             X = X.toarray()
         y = df["target"].values
-        print(f"Applied preprocessor → X shape: {X.shape}")
+        print(f"Preprocessor applied. Feature shape: {X.shape}")
     else:
-        # Fallback: use raw numeric values
+        # Fallback: raw numeric values (pre-processed format)
         y = df["target"].values
         X = df.drop("target", axis=1).values
-        print(f"Using raw features → X shape: {X.shape}")
+        print(f"Using raw features. Shape: {X.shape}")
 
     from sklearn.model_selection import train_test_split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -161,9 +161,17 @@ def main():
     X_train, y_train, X_test, y_test = load_data(args.data_path)
 
     model = MLPClassifier(hidden_layer_sizes=(16,), max_iter=1, warm_start=True, random_state=42)
-
-    # Initialize the model's internal state properly using partial_fit
-    model.partial_fit(X_train[:2], y_train[:2], classes=np.array([0, 1]))
+    
+    # Initialize with at least one sample of each class if available
+    unique_classes = np.unique(y_train)
+    if len(unique_classes) > 1:
+        init_indices = [np.where(y_train == c)[0][0] for c in [0, 1] if c in unique_classes]
+        model.partial_fit(X_train[init_indices], y_train[init_indices], classes=np.array([0, 1]))
+    else:
+        # Fallback dummy sample
+        dummy_X = np.zeros((2, X_train.shape[1]))
+        dummy_y = np.array([0, 1])
+        model.partial_fit(dummy_X, dummy_y, classes=np.array([0, 1]))
 
     client = HeartDiseaseClient(model, X_train, y_train, X_test, y_test)
     fl.client.start_client(server_address=args.server_address, client=client.to_client())

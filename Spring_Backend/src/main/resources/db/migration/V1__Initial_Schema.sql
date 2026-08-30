@@ -47,7 +47,7 @@ CREATE TABLE model_version (
     round_number INT NOT NULL,
     model_path VARCHAR(500),
     accuracy DOUBLE,
-    `precision` DOUBLE,
+    precision_score DOUBLE,
     recall DOUBLE,
     f1 DOUBLE,
     is_active BOOLEAN DEFAULT FALSE,
