@@ -154,11 +154,16 @@ def load_data(data_path):
 def main():
     parser = argparse.ArgumentParser(description="Flower Client")
     parser.add_argument("--client-id", type=int, required=True, help="ID of the client (1-4)")
-    parser.add_argument("--data-path", type=str, required=True, help="Path to the training CSV file")
+    parser.add_argument("--data-path", type=str, default=None, help="Path to the training CSV file")
     parser.add_argument("--server-address", type=str, default="127.0.0.1:8081", help="Address of the server")
     args = parser.parse_args()
 
-    X_train, y_train, X_test, y_test = load_data(args.data_path)
+    data_path = args.data_path
+    if not data_path:
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        data_path = os.path.join(base_dir, "data", f"hospital_{args.client_id}", "train.csv")
+
+    X_train, y_train, X_test, y_test = load_data(data_path)
 
     model = MLPClassifier(hidden_layer_sizes=(16,), max_iter=1, warm_start=True, random_state=42)
     
