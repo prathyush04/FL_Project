@@ -42,8 +42,8 @@ class SaveModelStrategy(fl.server.strategy.FedProx):
             params = fl.common.parameters_to_ndarrays(aggregated_parameters)
 
             model = MLPClassifier(hidden_layer_sizes=(16,), random_state=42)
-            # Initialize with dummy data (13 features for heart disease)
-            dummy_X = np.zeros((2, 13))
+            # Initialize with dummy data matching preprocessor output (28 features)
+            dummy_X = np.zeros((2, 28))
             dummy_y = np.array([0, 1])
             model.partial_fit(dummy_X, dummy_y, classes=np.array([0, 1]))
             
